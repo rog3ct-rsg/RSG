@@ -455,30 +455,39 @@
   // Image store: thumbsId -> [{name, dataUrl}]
   const imgStore = {};
 
+  function renderThumb(thumbsId, dataUrl) {
+    const thumbsEl = document.getElementById(thumbsId);
+    if (!thumbsEl) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'img-thumb-wrap';
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    const del = document.createElement('button');
+    del.className = 'img-thumb-del';
+    del.textContent = '✕';
+    del.onclick = () => {
+      const idx = imgStore[thumbsId].findIndex(i => i.dataUrl === dataUrl);
+      if (idx > -1) imgStore[thumbsId].splice(idx, 1);
+      wrap.remove();
+      saveState();
+    };
+    wrap.appendChild(img);
+    wrap.appendChild(del);
+    thumbsEl.appendChild(wrap);
+  }
+
   function addImages(input, thumbsId) {
     if (!imgStore[thumbsId]) imgStore[thumbsId] = [];
-    const thumbsEl = document.getElementById(thumbsId);
     const files = Array.from(input.files);
+    let loaded = 0;
     files.forEach(file => {
       const reader = new FileReader();
       reader.onload = e => {
         const dataUrl = e.target.result;
         imgStore[thumbsId].push({ name: file.name, dataUrl });
-        const wrap = document.createElement('div');
-        wrap.className = 'img-thumb-wrap';
-        const img = document.createElement('img');
-        img.src = dataUrl;
-        const del = document.createElement('button');
-        del.className = 'img-thumb-del';
-        del.textContent = '✕';
-        del.onclick = () => {
-          const idx = imgStore[thumbsId].findIndex(i => i.dataUrl === dataUrl);
-          if (idx > -1) imgStore[thumbsId].splice(idx, 1);
-          wrap.remove();
-        };
-        wrap.appendChild(img);
-        wrap.appendChild(del);
-        thumbsEl.appendChild(wrap);
+        renderThumb(thumbsId, dataUrl);
+        loaded++;
+        if (loaded === files.length) saveState();
       };
       reader.readAsDataURL(file);
     });
@@ -1753,8 +1762,24 @@
       if (os) state['campo-os'] = os.value;
       const dt = document.getElementById('meta-data');
       if (dt) state['meta-data'] = dt.value;
+      // imagens — salva imgStore completo (base64 já está pronto)
+      state['imgStore'] = imgStore;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch(e) {}
+    } catch(e) {
+      // localStorage cheio (imagens grandes) — salva sem imagens
+      try {
+        const state = {};
+        document.querySelectorAll('.check-item input[type="checkbox"]').forEach((cb, i) => { state['cb_' + i] = cb.checked; });
+        document.querySelectorAll('.outros-input').forEach(el => { if (el.id) state['inp_' + el.id] = el.value; });
+        const obs = document.getElementById('observacoes');
+        if (obs) state['observacoes'] = obs.value;
+        const os = document.getElementById('campo-os');
+        if (os) state['campo-os'] = os.value;
+        const dt = document.getElementById('meta-data');
+        if (dt) state['meta-data'] = dt.value;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch(e2) {}
+    }
   }
 
   function loadState() {
@@ -1786,6 +1811,14 @@
       if (os && state['campo-os'] !== undefined) os.value = state['campo-os'];
       const dt = document.getElementById('meta-data');
       if (dt && state['meta-data'] !== undefined) dt.value = state['meta-data'];
+      // imagens — restaura imgStore e reconstrói thumbnails
+      if (state['imgStore']) {
+        Object.entries(state['imgStore']).forEach(([thumbsId, imgs]) => {
+          if (!Array.isArray(imgs) || !imgs.length) return;
+          imgStore[thumbsId] = imgs;
+          imgs.forEach(im => renderThumb(thumbsId, im.dataUrl));
+        });
+      }
       return true;
     } catch(e) { return false; }
   }
